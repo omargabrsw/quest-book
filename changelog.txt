@@ -1,4 +1,31 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.7
+Date: 2026-10-29
+  Features:
+    - Added quest chapters for Krastorio 2, Muluna, Moshine, Cerys and Maraxsis.
+    - Reworked the Krastorio 2 progression around imersite, rare metals, matter and singularity technologies, ending with the intergalactic transceiver and the antimatter reactor.
+    - Split the Krastorio 2 progression into stages spread through the book: the automation cores quest sits in the first chapter (Krastorio gates assemblers behind them), silicon refinement follows Black Gold, Rare Metals follows blue science, Imersite follows purple science with Advanced Furnaces as its own gated stage, Matter follows Aquilo, and End Game (antimatter reactor and intergalactic transceiver) follows promethium. There is no separate Basic Industry chapter anymore.
+    - Orbits before moons: the platform and thrusters are built before visiting Muluna; platform no longer requires space science, which with Muluna installed is produced on the moon.
+    - Muluna is an island in the sky: with the moon installed the platform quest asks only for the hub (no asteroid collectors or crushers) and the platform no longer requires space science; a new Vacuum Power stage on the moon covers the vacuum boilers and the steam crusher, and the stars-chapter space science objective is omitted since the lunar laboratories produce it directly.
+    - Cerys reordered to match the tech chain: nuclear scrap recycling unlocks the ancient structure repair parts before the Cerysian science packs, and the late structure repair researches now precede the mixed oxide reactor.
+    - Reordered the chapters by code order: Cerys before Fulgora, Moshine after Vulcanus/Gleba/Fulgora and Maraxsis before Aquilo.
+    - Krastorio 2 stages are spread through the book like the rest of the progression; with the mod absent the book collapses back to the pure base game path.
+    - Planet mods (Muluna, Moshine, Cerys, Maraxsis) are optional: each chapter group is omitted entirely and the rest of the book renumbers without them.
+    - The book is assembled from mod-gated groups: chapters and quests for missing mods (Krastorio 2, Muluna, Moshine, Cerys, Maraxsis, Space Age) are omitted entirely and the chapter numbering scales automatically instead of leaving placeholders.
+    - Chapter titles now get their Roman numerals generated at runtime.
+    - Objectives and rewards fall back to alternatives at runtime when a mod renames or replaces prototypes (e.g. Krastorio 2 rifle ammo), so quests for shared content stay playable.
+  Changes:
+    - Cerys reordered to match the tech chain: nuclear scrap recycling unlocks the ancient structure repair parts before the Cerysian science packs, and the late structure repair researches now precede the mixed oxide reactor.
+    - Space science is no longer required for the platform and thrusters; the stars chapter space science quest also accepts the Muluna interstellar science pack, which replaces it under the Krastorio spaced-out variant.
+    - The end game (antimatter reactor and intergalactic transceiver) now has its own chapter, after the promethium science stage.
+    - Maraxsis now sits right before Aquilo, so the ocean world is visited on the way to the frozen planet.
+    - Krastorio spaced-out compatibility:
+      - Basic industry opens the book: automation cores before red science, since Krastorio gates assemblers behind them.
+      - Hidden prototypes (K2SO converts items like silicon and sand into their kr- variants) are only used as produce objectives when no visible alternative exists; Muluna/Moshine silicon and Moshine sand fall back accordingly.
+      - The cryolab objectives in the Muluna science quest are skipped when K2SO hides the cryolab.
+      - The advanced furnace stage requires Vulcanus science in the spaced-out variant, where its research depends on metallurgic science.
+    - GUI: selecting a quest in a later chapter no longer scrolls the quest list back to the top.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.6
 Date: 2026-10-11
   Features:

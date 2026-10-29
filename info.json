@@ -1,11 +1,11 @@
 {
   "name": "quest-book",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "title": "Quest Book",
   "author": "Maksym Prymierov",
   "contact": "primerovmax@gmail.com",
   "homepage": "https://github.com/MaksymPrymierov/quest-book",
   "factorio_version": "2.1",
   "dependencies": ["base >= 2.1.0", "? space-age"],
-  "description": "An in-game story quest book that guides you from the crash landing to the edge of the solar system. Supports vanilla and Space Age; quests for missing content are skipped automatically."
+  "description": "An in-game story quest book that guides you from the crash landing to the edge of the solar system. Supports vanilla, Space Age, Krastorio 2, Muluna, Moshine, Cerys and Maraxsis; chapters and quests for missing mods or content are omitted or skipped automatically, and the numbering adapts to whatever is installed."
 }

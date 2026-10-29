@@ -4,6 +4,8 @@ local defs = require("scripts.quests")
 local BUTTON = "qb_open_button"
 local WINDOW = "qb_window"
 local TRACKER = "qb_tracker"
+local DETAILS = "qb_details"
+local BODY = "qb_body"
 local CHECK_INTERVAL = 60
 
 -- Static lookup tables built from the definitions
@@ -72,22 +74,78 @@ local function variant_names(entity)
   return names
 end
 
+-- First valid name among a list; nil if none of the prototypes exists.
+local function first_valid(check, names)
+  for _, name in ipairs(names) do
+    if name and check(name) then return name end
+  end
+  return nil
+end
+
+local function name_pool(primary, alternatives)
+  local names = { primary }
+  for _, name in ipairs(alternatives or {}) do names[#names + 1] = name end
+  return names
+end
+
+-- All prototype names a produce objective counts: its item/fluid plus `alternatives`.
+-- Overhaul mods often replace content (e.g. Krastorio 2 changes rifle ammo), so quests
+-- name their main prototype first and fall back to alternatives that exist. Prototypes
+-- hidden by a mod (K2SO converts items like silicon into kr-silicon) are only used when
+-- no visible alternative exists, so unobtainable content never counts.
+local function produce_names(obj)
+  local names = {}
+  local fallback
+  for _, name in ipairs(name_pool(obj.fluid or obj.item, obj.alternatives)) do
+    local proto = obj.fluid and prototypes.fluid[name] or prototypes.item[name]
+    if proto then
+      if not proto.hidden then names[#names + 1] = name
+      elseif not fallback then fallback = name
+      end
+    end
+  end
+  if #names == 0 and fallback then names[1] = fallback end
+  return names
+end
+
+-- The technology a research objective resolves to.
+local function tech_name(obj)
+  return first_valid(function(name) return prototypes.technology[name] end,
+    name_pool(obj.tech, obj.alternatives))
+end
+
+-- The item prototype a reward resolves to.
+local function reward_name(reward)
+  return first_valid(function(name) return prototypes.item[name] end,
+    name_pool(reward.name, reward.alternatives))
+end
+
 -- The entity whose icon and help page represent a build objective.
 local function build_entity(obj)
-  if not obj.kind or prototypes.entity[obj.entity] then return obj.entity end
-  return kind_names(obj)[1]
+  if obj.kind then
+    if prototypes.entity[obj.entity] then return obj.entity end
+    return first_valid(function(name) return prototypes.entity[name] end, kind_names(obj))
+  end
+  return first_valid(function(name) return prototypes.entity[name] end,
+    name_pool(obj.entity, obj.alternatives))
+end
+
+-- All entities a non-kind build objective counts: the resolved entity and its variants.
+local function entity_names(obj)
+  local entity = build_entity(obj)
+  if not entity then return {} end
+  return variant_names(entity)
 end
 
 local function objective_valid(obj)
   local t = obj.type
   if t == "produce" then
-    if obj.fluid then return prototypes.fluid[obj.fluid] ~= nil end
-    return prototypes.item[obj.item] ~= nil
+    return #produce_names(obj) > 0
   elseif t == "research" then
-    return prototypes.technology[obj.tech] ~= nil
+    return tech_name(obj) ~= nil
   elseif t == "build" then
     if obj.kind then return #kind_names(obj) > 0 end
-    return prototypes.entity[obj.entity] ~= nil
+    return build_entity(obj) ~= nil
   elseif t == "rocket" then
     return true
   elseif t == "visit" then
@@ -103,7 +161,7 @@ local function quest_valid(quest)
     if not objective_valid(obj) then return false end
   end
   for _, reward in ipairs(quest.rewards or {}) do
-    if not prototypes.item[reward.name] then return false end
+    if not reward_name(reward) then return false end
   end
   return true
 end
@@ -223,11 +281,12 @@ end
 ---------------------------------------------------------------------------
 
 local function produced(force, obj)
+  local names = produce_names(obj)
   local total = 0
   for _, surface in pairs(game.surfaces) do
     local stats = obj.fluid and force.get_fluid_production_statistics(surface)
       or force.get_item_production_statistics(surface)
-    total = total + stats.get_input_count(obj.fluid or obj.item)
+    for _, name in ipairs(names) do total = total + stats.get_input_count(name) end
   end
   return total
 end
@@ -238,7 +297,7 @@ local function objective_progress(force, fs, obj)
   if t == "produce" then
     return math.floor(produced(force, obj)), obj.count
   elseif t == "research" then
-    local tech = force.technologies[obj.tech]
+    local tech = force.technologies[tech_name(obj)]
     return (tech and tech.researched) and 1 or 0, 1
   elseif t == "build" then
     if obj.kind then
@@ -247,7 +306,7 @@ local function objective_progress(force, fs, obj)
       return total, obj.count
     end
     local total = 0
-    for _, name in ipairs(variant_names(obj.entity)) do total = total + force.get_entity_count(name) end
+    for _, name in ipairs(entity_names(obj)) do total = total + force.get_entity_count(name) end
     return total, obj.count
   elseif t == "rocket" then
     return force.rockets_launched, obj.count
@@ -279,12 +338,13 @@ end
 local function objective_caption(obj)
   local t = obj.type
   if t == "produce" then
-    if obj.fluid then
-      return { "quest-book.obj-produce", "[fluid=" .. obj.fluid .. "]", prototypes.fluid[obj.fluid].localised_name }
-    end
-    return { "quest-book.obj-produce", "[item=" .. obj.item .. "]", prototypes.item[obj.item].localised_name }
+    local name = produce_names(obj)[1]
+    local proto = obj.fluid and prototypes.fluid[name] or prototypes.item[name]
+    return { "quest-book.obj-produce", "[" .. (obj.fluid and "fluid" or "item") .. "=" .. name .. "]",
+      proto.localised_name }
   elseif t == "research" then
-    return { "quest-book.obj-research", "[technology=" .. obj.tech .. "]", prototypes.technology[obj.tech].localised_name }
+    local tech = tech_name(obj)
+    return { "quest-book.obj-research", "[technology=" .. tech .. "]", prototypes.technology[tech].localised_name }
   elseif t == "build" then
     local entity = build_entity(obj)
     return { "quest-book.obj-build", "[entity=" .. entity .. "]",
@@ -303,13 +363,14 @@ end
 local function objective_help(obj)
   local t = obj.type
   if t == "research" then
-    return "technology", prototypes.technology[obj.tech]
+    return "technology", prototypes.technology[tech_name(obj)]
   end
   local proto
   if t == "produce" then
-    proto = obj.fluid and prototypes.fluid[obj.fluid] or prototypes.item[obj.item]
+    local name = produce_names(obj)[1]
+    proto = obj.fluid and prototypes.fluid[name] or prototypes.item[name]
     -- rocket parts have no Factoriopedia page of their own; they are made in the silo
-    if obj.item == "rocket-part" then proto = prototypes.entity["rocket-silo"] end
+    if name == "rocket-part" then proto = prototypes.entity["rocket-silo"] end
   elseif t == "build" then
     proto = prototypes.entity[build_entity(obj)]
   elseif t == "rocket" then
@@ -353,6 +414,13 @@ local STATUS_ICON = {
   active = "[img=utility/status_yellow]",
   locked = "[img=utility/status_inactive]",
 }
+
+-- Chapter header: icon, a Roman numeral generated at runtime and the localized name,
+-- so chapter numbering adapts when mods add or remove chapters.
+local function chapter_caption(chapter)
+  return { "", "[img=" .. chapter.icon .. "] ", defs.roman(chapter.order), ". ",
+    { "quest-book-chapter." .. chapter.id } }
+end
 
 ---------------------------------------------------------------------------
 -- GUI: tracker
@@ -437,6 +505,7 @@ end
 
 local function build_quest_list(parent, player, fs, selected)
   local scroll = parent.add { type = "scroll-pane", direction = "vertical", style = "naked_scroll_pane" }
+  player_state(player).list_pane = scroll
   scroll.style.width = 280
   scroll.style.vertically_stretchable = true
   scroll.style.padding = 4
@@ -447,7 +516,7 @@ local function build_quest_list(parent, player, fs, selected)
       if quest.chapter == chapter.id and storage.valid[quest.id] then visible[#visible + 1] = quest end
     end
     if #visible > 0 then
-      local header_caption = { "", "[img=" .. chapter.icon .. "] ", { "quest-book-chapter." .. chapter.id } }
+      local header_caption = chapter_caption(chapter)
       local header_tooltip
       local finished = chapter_completed_tick(fs, chapter)
       if finished then
@@ -485,6 +554,7 @@ local function build_quest_list(parent, player, fs, selected)
         end
         local button = scroll.add {
           type = "button",
+          name = "qb_quest_" .. quest.id,
           caption = caption,
           tooltip = tooltip,
           style = quest.id == selected and "qb_quest_button_selected" or "qb_quest_button",
@@ -494,6 +564,12 @@ local function build_quest_list(parent, player, fs, selected)
         button.style.horizontally_stretchable = true
       end
     end
+  end
+  -- Selecting a quest rebuilds the window, which would otherwise jump back to the top;
+  -- bring the selected quest back into view.
+  if selected then
+    local button = scroll["qb_quest_" .. selected]
+    if button then scroll.scroll_to_element(button, "in-view") end
   end
 end
 
@@ -518,7 +594,7 @@ update_window_progress = function(player)
 end
 
 local function build_details(parent, player, fs, quest)
-  local pane = parent.add { type = "frame", direction = "vertical", style = "inside_shallow_frame_with_padding" }
+  local pane = parent.add { type = "frame", name = DETAILS, direction = "vertical", style = "inside_shallow_frame_with_padding" }
   pane.style.width = 520
   pane.style.vertically_stretchable = true
   local scroll = pane.add { type = "scroll-pane", direction = "vertical", style = "naked_scroll_pane" }
@@ -527,7 +603,7 @@ local function build_details(parent, player, fs, quest)
 
   local status = quest_status(fs, quest)
   local chapter = chapter_by_id[quest.chapter]
-  scroll.add { type = "label", caption = { "", "[img=" .. chapter.icon .. "] ", { "quest-book-chapter." .. chapter.id } } }.style.font_color = { 0.7, 0.7, 0.7 }
+  scroll.add { type = "label", caption = chapter_caption(chapter) }.style.font_color = { 0.7, 0.7, 0.7 }
   local title = scroll.add { type = "label", caption = { "quest-book-title." .. quest.id } }
   title.style.font = "heading-1"
   if status == "active" then
@@ -576,7 +652,8 @@ local function build_details(parent, player, fs, quest)
     local row = scroll.add { type = "flow", direction = "horizontal" }
     row.style.vertical_align = "center"
     for _, reward in ipairs(quest.rewards) do
-      row.add { type = "sprite-button", sprite = "item/" .. reward.name, number = reward.count, style = "slot_button", elem_tooltip = { type = "item", name = reward.name } }
+      local name = reward_name(reward)
+      row.add { type = "sprite-button", sprite = "item/" .. name, number = reward.count, style = "slot_button", elem_tooltip = { type = "item", name = name } }
     end
     if ps.claimed[quest.id] then
       row.add { type = "label", caption = { "quest-book.reward-claimed" } }.style.left_margin = 12
@@ -641,7 +718,7 @@ local function build_window(player)
     tags = { qb_action = "close" }, tooltip = { "gui.close-instruction" },
   }
 
-  local body = window.add { type = "flow", direction = "horizontal" }
+  local body = window.add { type = "flow", name = BODY, direction = "horizontal" }
   body.style.horizontal_spacing = 12
   body.style.vertically_stretchable = true
   build_quest_list(body, player, fs, quest.id)
@@ -669,6 +746,51 @@ end
 
 local function toggle_window(player)
   if player.gui.screen[WINDOW] then close_window(player) else build_window(player) end
+end
+
+-- Selecting a quest must not rebuild the window: the quest list scroll-pane
+-- cannot restore its scroll position after a rebuild, so it would always jump
+-- back to the top. Only the details pane is rebuilt, the list is restyled
+-- in place and stays exactly where the player left it.
+local function select_quest(player, quest_id)
+  local fs = force_state(player.force)
+  local ps = player_state(player)
+  local quest = quest_by_id[quest_id]
+  if not quest or not storage.valid[quest.id] or quest_status(fs, quest) == "locked" then
+    build_window(player)
+    return
+  end
+
+  local window = player.gui.screen[WINDOW]
+  local body = window and window[BODY]
+  local details = body and body[DETAILS]
+  local list = ps.list_pane
+  if ps.selected == quest.id and details and details.valid and list and list.valid then
+    return -- already selected: keep everything exactly as it is
+  end
+  if not (details and details.valid and list and list.valid) then
+    build_window(player)
+    return
+  end
+
+  -- restyle the previously and newly selected list buttons in place
+  if ps.selected then
+    local previous = list["qb_quest_" .. ps.selected]
+    if previous and previous.valid and previous.style.name == "qb_quest_button_selected" then
+      previous.style = "qb_quest_button"
+      previous.style.horizontally_stretchable = true
+    end
+  end
+  local button = list["qb_quest_" .. quest.id]
+  if button and button.valid then
+    button.style = "qb_quest_button_selected"
+    button.style.horizontally_stretchable = true
+  end
+  ps.selected = quest.id
+
+  local parent = details.parent
+  details.destroy()
+  build_details(parent, player, fs, quest)
 end
 
 local function ensure_button(player)
@@ -864,13 +986,16 @@ local function claim(player, quest)
   if not rewards_enabled() or ps.claimed[quest.id] or not fs.completed[quest.id] then return end
   ps.claimed[quest.id] = true
   for _, reward in ipairs(quest.rewards) do
-    local inserted = player.insert { name = reward.name, count = reward.count }
-    local rest = reward.count - inserted
-    if rest > 0 and player.physical_surface then
-      player.physical_surface.spill_item_stack {
-        position = player.physical_position, stack = { name = reward.name, count = rest },
-        enable_looted = true, allow_belts = false,
-      }
+    local name = reward_name(reward)
+    if name then
+      local inserted = player.insert { name = name, count = reward.count }
+      local rest = reward.count - inserted
+      if rest > 0 and player.physical_surface then
+        player.physical_surface.spill_item_stack {
+          position = player.physical_position, stack = { name = name, count = rest },
+          enable_looted = true, allow_belts = false,
+        }
+      end
     end
   end
   player.play_sound { path = "utility/new_objective" }
@@ -888,8 +1013,7 @@ script.on_event(defines.events.on_gui_click, function(e)
   elseif action == "close" then
     close_window(player)
   elseif action == "select" then
-    player_state(player).selected = element.tags.quest
-    build_window(player)
+    select_quest(player, element.tags.quest)
   elseif action == "help" then
     local quest = quest_by_id[element.tags.quest]
     local obj = quest and quest.objectives[element.tags.objective]
